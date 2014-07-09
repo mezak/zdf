@@ -11,8 +11,6 @@
 
 import string, os, sys, locale, copy
 import mzconstants
-import arcpy
-arcpy.env.overwriteOutput = True
 
 ##{'zone':'Zone',
 ## 'station1':'StationID',
