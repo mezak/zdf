@@ -1,16 +1,16 @@
 # shape2zdf
-# converts feature class to/from ZDF text file
+# converts feature class to ZDF text file
 # assumes NAD83 lat/lon spatial reference
 # does not handle multiple stations per zone (only 1)
 # does not handle tide average (only writes one station
 # to each zone under the TIDE_AVERAGE section
 #
 # updated for ArcGIS 10
-# to be updated to use Fiona and Shapely and remove ArcPy
-# also an experiment with GitHub
 
 import string, os, sys, locale, copy
 import mzconstants
+import arcpy
+arcpy.env.overwriteOutput = True
 
 ##{'zone':'Zone',
 ## 'station1':'StationID',
@@ -54,18 +54,21 @@ def writezdf(inputzoningpath,inputstationpath,outputzdfpath,zfields,stationfield
         newstationlist =[]
         tideavglist = []
         cent_dict = {}
-
-        zdfRows = arcpy.SearchCursor(inputzoningpath,"","",zfields['zone'],zfields['zone']+" A")
+        print 'zone field name',zfields['zone']
+        zdfRows = arcpy.da.SearchCursor(inputzoningpath,zfields['zone'],SHAPE@XY)
         zdfRow = zdfRows.next()
         
         logfile.write('Shape Type: ' + zdfDesc.ShapeType + "\n")
+        
+        thefields = [zfields['zone'],SHAPE@XY]
+        with arcpy.da.SearchCursor(inputzoningpath,thefields) as cursor:
+            for zdfRow in cursor:
 
-        while zdfRow:
-            # Create the geometry object
-            feat = zdfRow.getValue(zdfDesc.ShapeFieldName)
-
-            #get centroid for later in case we want to use it for tide station coord
-            cent_dict[zdfRow.getValue(zfields['zone'])] = feat.centroid
+                #get centroid for later in case we want to use it for tide station coord
+                try:
+                    cent_dict[zdfRow[0]] = zdfRow[1]
+                except:
+                    cent_dict[zdfRow[0]] = None
             
             # the current multipoint's ID
             logfile.write('Feature '+str(zdfRow.getValue(oidname))+':')
@@ -286,14 +289,14 @@ if __name__ == '__main__':
 
     basepath = mzconstants.basepath+''
     
-    inputpath = basepath + 'input\\'
-    inputzoningname = 'K354KR2012CORP_JOAfinal_20130118.shp'
+    inputpath = basepath + 'input/'
+    inputzoningname = 'JOArevisedzoning_20130702.shp'
     inputzoningpath = inputpath+inputzoningname
-    inputstationname = 'K354KR2011stations_revised20120501.shp'
+    inputstationname = 'JOAstations_20130702.shp'
     inputstationpath = inputpath + inputstationname
 
     outputpath = basepath+ 'output\\'
-    outputzdfname = 'K354KR2012CORP_JOAfinal_20130118.zdf'
+    outputzdfname = 'JOArevisedzoning_20130702.zdf'
     outputzdfpath = outputpath + outputzdfname
 
 ##    zonefields = {'zone':'Zone',
@@ -303,10 +306,10 @@ if __name__ == '__main__':
 ##                  'to1':'TimeOffset'}
    
     zonefields = {'zone':'ZONE',
-                  'station1':'TS3',
-                  'station1type':'TYPE',
-                  'rr1':'R3',
-                  'to1':'ATC3'}
+                  'station1':'TS1',
+                  'station1type':None,
+                  'rr1':'R1',
+                  'to1':'ATC1'}
     
 ##    zonefields = {'zone':'Zone',
 ##                  'station1':'StationID',
