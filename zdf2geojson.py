@@ -5,22 +5,22 @@ Created on Fri Jul 18 15:04:22 2014
 @author: mzieserl
 
 read Caris ZDF
-convert to geojson format and returns list holding both geojson outputs
- 
+returns geojson outputs
 zones are polygon, tide stations are points
 does not handle multiple stations per zone (only 1)
 only puts one tide station per zone under the TIDE_AVERAGE section
 assumes coordinates are NAD83 lat, lon
 
-QC
+QC - not enforced!!!
 checks that all polygons are closed
 that each geometry has zoning attributes
 that adjacent coordintates are the same, so there are no slivers or overlaps 
 between zones
+that there are no duplicate zone names or geometries
 
 """
 
-import shapefile, copy
+import copy
 from geojson import Point, Polygon, Feature, FeatureCollection
 
 # create the PRJ file
@@ -31,11 +31,6 @@ from geojson import Point, Polygon, Feature, FeatureCollection
 
 
 # get a section of the zdf into a list
-# returns list with 4 lines
-# 0 number of lines in this section
-# 1 line number
-# 2 list of the lines that were read, split by commas
-# 3 any messages created
 def zdfsection(i,zdflines,sectiontype):
     
     numlinesadded = 0
@@ -83,7 +78,7 @@ def zdfsection(i,zdflines,sectiontype):
     return {'lines added':numlinesadded,'current line':i,
     'readlines':thelines,'current section':this_section,'msg':logmsg}
  
-# read polygon geometry under ZONE  
+# read polygon geometry under ZONE into list  
 def read_zone(thelines):
     azone = {}
     zonename = str(thelines[0][0])
@@ -92,7 +87,7 @@ def read_zone(thelines):
     error = False
     
     for pnt in thelines[1:]:
-        thecoords.append([float(pnt[0]),float(pnt[1])])   #lat,lon
+        thecoords.append([float(pnt[1]),float(pnt[0])])   #lon,lat for geojson
     azone['coordinates'] = copy.copy(thecoords)
 
     logmsg = ''
@@ -110,7 +105,7 @@ def read_zone(thelines):
     return  {'zonename': zonename, 'readzone': azone, 'error' : error,'msg': logmsg}
 
 
-# read in the zoning factors in TIDE_ZONE
+# read in the zoning factors in TIDE_ZONE into dictionary
 def read_tide_zone(thelines):
 ##    print thelines
     alltidezones= {}
@@ -131,7 +126,7 @@ def read_tide_zone(thelines):
 def read_tide_station(thelines):
     allstations = []   
     for oneline in thelines:
-        allstations.append({'coordinates':[float(oneline[1]),float(oneline[2])],
+        allstations.append({'coordinates':[float(oneline[2]),float(oneline[1])], # lon, lat for geojson
                                             'attributes':{'Station':oneline[0]}})
     return allstations
 
@@ -151,7 +146,8 @@ def read_options(thelines):
     
     return options
     
-    
+#create geojson polygons
+#geojson expects longitude first, then lat (x,y)
 def create_zones(zones):
     
     featurelist = []
@@ -169,7 +165,7 @@ def create_zones(zones):
     
     return geozones
 
-
+#create geojson points
 def create_stations(tide_stations):
     
     featurelist = []
@@ -185,13 +181,14 @@ def create_stations(tide_stations):
     
     return geostations
     
+# this is the main function
+# read in zdf file (ZONE, TIDE_ZONE, TIDE_AVERAGE, TIDE_STATION, OPTIONS)
+# create geojson polygons for zones and points for stations 
+def readzdf(zdfpath):
     
-def readzdf():
     
-    zdfpath ='C:/WORK/python/git/zdf/tests/JOA Zoning 20131008b.zdf'
     try:
         zdf_file = open(zdfpath,'r')
-    
         zone = {}
         unique_zonegeo = 0
         zone_attributes = 0
@@ -265,7 +262,7 @@ def readzdf():
             else:
                 pass
                 #error, there are attributes without geometry
-        
+
         for akey in zone.keys():
             if not zone[akey].has_key('attributes'):
                 print 'missing attributes for',akey
@@ -275,14 +272,14 @@ def readzdf():
         #print geozones
         
         geostations = create_stations(tide_station)
-        print geostations
+        #print geostations
 
 #    except:
 #        print 'ok'
     finally:
         zdf_file.close()    
-    return {'zones':geozones,'stations':geostations}
+    return geozones,geostations
     
 if __name__ == '__main__':
-
-    readzdf()
+    zdfpath ='C:/WORK/python/git/zdf/tests/JOA Zoning 20131008b.zdf'
+    readzdf(zdfpath)
