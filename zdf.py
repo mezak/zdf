@@ -30,13 +30,16 @@ from geojson import Point, Polygon, Feature, FeatureCollection
 #prj.close()
 
 
+###############################################################################
+#functions to support readzdf function
+
 # get a section of the zdf into a list
 def zdfsection(i,zdflines,sectiontype):
     
     numlinesadded = 0
     thelines = []
     
-    firstline = zdflines[i].replace('\n', '').strip()
+    firstline = zdflines[i].replace('\r\n', '').strip()
     i+=1 # move to next line
     if firstline == '[ZONE]':
         this_section = 'geometry'
@@ -59,8 +62,8 @@ def zdfsection(i,zdflines,sectiontype):
     
 
     #stops at end of file or at a blank line, split on commas
-    while i < len(zdflines) and zdflines[i].replace('\n', '').strip():
-        thestring = zdflines[i].replace('\n', '').strip()
+    while i < len(zdflines) and zdflines[i].replace('\r\n', '').strip():
+        thestring = zdflines[i].replace('\r\n', '').strip()
         strlist = thestring.split(',')
         for item in strlist:
             item.strip()
@@ -69,7 +72,7 @@ def zdfsection(i,zdflines,sectiontype):
         i+=1
 
     if numlinesadded==0:
-        logmsg = 'Nothing read for this section: {}'.format(zdflines[i-1].replace('\n', '').strip())
+        logmsg = 'Nothing read for this section: {}'.format(zdflines[i-1].replace('\r\n', '').strip())
     else:
         logmsg="Read {:.0f} lines from this section.".format(numlinesadded)
         
@@ -92,14 +95,14 @@ def read_zone(thelines):
 
     logmsg = ''
     if len(thecoords)!=azone['point_number']:
-        logmsg = '\n'+azone['name']+': given number of points ('+str(azone['point_number'])
-        logmsg = logmsg+') does not equal list length: '+str(len(thecoords))+'\n'
+        logmsg = '\r\n'+azone['name']+': given number of points ('+str(azone['point_number'])
+        logmsg = logmsg+') does not equal list length: '+str(len(thecoords))+'\r\n'
         error = True
 
     if azone['coordinates'][0]!=azone['coordinates'][-1]:
-        logmsg = logmsg + '\nFirst and last coordinates are not the same: \n'
+        logmsg = logmsg + '\r\nFirst and last coordinates are not the same: \r\n'
         logmsg = logmsg+str(azone['coordinates'][0])+'   '
-        logmsg = logmsg+str(azone['coordinates'][-1])+'\n'
+        logmsg = logmsg+str(azone['coordinates'][-1])+'\r\n'
         error = True
         
     return  {'zonename': zonename, 'readzone': azone, 'error' : error,'msg': logmsg}
@@ -145,7 +148,12 @@ def read_options(thelines):
     options['Interval'] = thelines[1][1]
     
     return options
-    
+
+
+
+###############################################################################
+#geojson functions
+
 #create geojson polygons
 #geojson expects longitude first, then lat (x,y)
 def create_zones(zones):
@@ -180,13 +188,40 @@ def create_stations(tide_stations):
     geostations = FeatureCollection(featurelist)   
     
     return geostations
+
+# get boundary extents and center of geojson files
+def geojson_bounds(gj):
+    lat=[]
+    lon=[]    
     
-# this is the main function
+    for agj in gj:
+        for f in agj['features']:
+            if f['geometry']['type']=='Polygon':
+                for c in f['geometry']['coordinates']: 
+                    lon.append(c[0])
+                    lat.append(c[1])
+            elif f['geometry']['type']=='Point':
+                lon.append(c[0])
+                lat.append(c[1])
+    
+    bounds = {'latmax': max(lat),
+              'latmin': min(lat),
+              'lonmax': min(lon), #assume negative for west longitude
+              'lonmin': max(lon),
+              'center': [(max(lat)+min(lat))/2, (max(lon) + min(lon))/2]}
+    
+    return bounds
+
+            
+    
+    
+    
+###############################################################################  
+# readzdf
 # read in zdf file (ZONE, TIDE_ZONE, TIDE_AVERAGE, TIDE_STATION, OPTIONS)
 # create geojson polygons for zones and points for stations 
-def readzdf(zdfpath):
-    
-    
+def zdf2geojson(zdfpath):
+    zdf_file = 0
     try:
         zdf_file = open(zdfpath,'r')
         zone = {}
@@ -205,7 +240,7 @@ def readzdf(zdfpath):
         
         i = 0
         while i<len(zdflines):
-            oneline = zdflines[i].replace('\n','').strip()
+            oneline = zdflines[i].replace('\r\n','').strip()
             if not oneline:
                 pass 
             elif oneline == '[ZONE_DEF_VERSION_2]': #header
@@ -227,7 +262,7 @@ def readzdf(zdfpath):
                             print zone_return['msg']
                     
                         if zone.has_key(zone_return['zonename']): #problem
-                            msg = 'Duplicate zone defintions for '+zone_return['zonename']+'\n'
+                            msg = 'Duplicate zone defintions for '+zone_return['zonename']+'\r\n'
                             print msg
                         else:
                             zone[zone_return['zonename']] = zone_return['readzone']
@@ -271,15 +306,101 @@ def readzdf(zdfpath):
         geozones = create_zones(zone)
         #print geozones
         
+        #create tide station point geojson
         geostations = create_stations(tide_station)
         #print geostations
+        
+        #determine bounds of geojson files
+        bounds = geojson_bounds([geozones,geostations])
+        
+        #weird geojson fix for polygons, have to embed coordinates inside of another list
+        for azone in geozones['features']:
+            azone['geometry']['coordinates'] = [azone['geometry']['coordinates']]
 
 #    except:
 #        print 'ok'
     finally:
-        zdf_file.close()    
-    return geozones,geostations
+        if zdf_file:
+            zdf_file.close()    
+    return geozones,geostations,bounds
+    
+#if __name__ == '__main__':
+#    zdfpath ='C:/WORK/python/git/zdf/tests/JOA Zoning 20131008b.zdf'
+#    zdf2geojson(zdfpath)
+
+
+###############################################################################
+# create zdf from geojson
+# assumes NAD83 lat/lon spatial reference
+# does not handle multiple stations per zone (only 1)
+# does not handle tide average (only writes one station)
+def writezdf(outputzdfpath,zones,zonecols,stations,stationcols):
+    zdf=0
+    try:    
+        zdf = open(outputzdfpath,'w')
+        
+        #write header
+        zdf.write('[ZONE_DEF_VERSION_2]\r\n')
+        
+        #write zones
+        zdf.write('\r\n[ZONE]')
+        for azone in zones['features']:
+            c = azone['geometry']['coordinates']
+            while len(c)==1: # coordinate list may be embedded inside of another list
+                c = azone['geometry']['coordinates'][0]
+            zdf.write('\r\n')
+            zdf.write(','.join([str(azone['properties'][zonecols['zone']]),'{:.0f}'.format(len(c))+'\r\n']))
+            for apair in c:
+                zdf.write('{0:>.6f},{1:>.6f}\r\n'.format(apair[1],apair[0]))
+        
+        #write tide zones
+        zdf.write('\r\n[TIDE_ZONE]\r\n')
+        for azone in zones['features']:
+            zprops = azone['properties']
+            zdf.write(','.join([str(zprops[zonecols['zone']]),
+                                str(zprops[zonecols['station']]),
+                                'PRIM',
+                                '{:.0f}'.format(zprops[zonecols['time']]),
+                                '{:.2f}'.format(zprops[zonecols['range']])]))
+            zdf.write('\r\n')
+        
+        #write tide stations
+        zdf.write('\r\n[TIDE_STATION]\r\n')
+        for astation in stations['features']:
+            sprops = astation['properties']
+            c = astation['geometry']['coordinates']
+            zdf.write(','.join([str(sprops[stationcols['station']]),
+                                '{:>.6f}'.format(c[1]),
+                                '{:>.6f}'.format(c[0])]))
+            zdf.write('\r\n')
+        
+        #write tide average (assume only 1 station per zone)
+        zdf.write('\r\n[TIDE_AVERAGE]\r\n')
+        for azone in zones['features']:
+            zprops = azone['properties']
+            zdf.write(','.join([str(zprops[zonecols['zone']]),
+                                str(zprops[zonecols['station']]),
+                                str(zprops[zonecols['station']])]))
+            zdf.write('\r\n')
+        
+        zdf.write('\r\n[OPTIONS]\r\nOutage, 30\r\nInterval, 360\r\n')
+    
+    finally:
+        if zdf:        
+            zdf.close()
+        return 1
     
 if __name__ == '__main__':
-    zdfpath ='C:/WORK/python/git/zdf/tests/JOA Zoning 20131008b.zdf'
-    readzdf(zdfpath)
+    #grab sample json files
+    import json
+    zf = open('C:/WORK/python/git/zdf/tests/zones.json','r')    
+    zonesgj = json.loads(zf.read())
+    sf = open('C:/WORK/python/git/zdf/tests/stations.json','r')    
+    stationsgj = json.loads(sf.read())
+    
+    outputzdfpath = 'C:/WORK/python/git/zdf/tests/testoutput.zdf'
+    #define the column or field names for each of the following items
+    zonecols={'zone':'ZONE','station':'TS1','time':'ATC1','range':'R1'}
+    stationcols={'station':'Station'}
+    writezdf(outputzdfpath,zonesgj,zonecols,stationsgj,stationcols)
+    

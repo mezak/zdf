@@ -1,9 +1,8 @@
 zdf
 ===
 
-Converting to and from zoning definition files (ZDF) with Python.  
+Converting zoning definition files (ZDF) to geojson.
 
-Use Fiona (GDAL/OGR) for file conversions, Shapely for geometry.
+Writing geojson to ZDF format.  
 
-Or use python only pyshape...
-
+Use python library geojson.
