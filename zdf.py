@@ -18,10 +18,14 @@ that adjacent coordintates are the same, so there are no slivers or overlaps
 between zones
 that there are no duplicate zone names or geometries
 
-"""
+REQUIRES: geojson
 
+"""
+import json
 import copy
 from geojson import Point, Polygon, Feature, FeatureCollection
+import shapefile as shp
+
 
 # create the PRJ file
 #prj = open("%s.prj" % filename, "w")
@@ -152,7 +156,7 @@ def read_options(thelines):
 
 
 ###############################################################################
-#geojson functions
+#geojson functions (require geojson module)
 
 #create geojson polygons
 #geojson expects longitude first, then lat (x,y)
@@ -330,7 +334,7 @@ def zdf2geojson(zdfpath):
 
 
 ###############################################################################
-# create zdf from geojson
+# create zdf from geojson (does not require geojson module)
 # assumes NAD83 lat/lon spatial reference
 # does not handle multiple stations per zone (only 1)
 # does not handle tide average (only writes one station)
@@ -390,17 +394,121 @@ def writezdf(outputzdfpath,zones,zonecols,stations,stationcols):
             zdf.close()
         return 1
     
+#if __name__ == '__main__':
+#    #grab sample json files
+#    zf = open('C:/WORK/python/git/zdf/tests/zones.json','r')    
+#    zonesgj = json.loads(zf.read())
+#    sf = open('C:/WORK/python/git/zdf/tests/stations.json','r')    
+#    stationsgj = json.loads(sf.read())
+#    
+#    outputzdfpath = 'C:/WORK/python/git/zdf/tests/testoutput.zdf'
+#    #define the column or field names for each of the following items
+#    zonecols={'zone':'ZONE','station':'TS1','time':'ATC1','range':'R1'}
+#    stationcols={'station':'Station'}
+#    writezdf(outputzdfpath,zonesgj,zonecols,stationsgj,stationcols)
+
+
+###############################################################################
+# write shapefiles from geojson
+
+#utility function to create projection file
+#assuming NAD83
+def prjNAD83():
+    
+    prj = 'GEOGCS["GCS_North_American_1983", \
+    DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137,298.257222101]], \
+    PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]]'    
+    
+    return prj
+
+# write shapefile from geojson polygon
+def writezoneshp(outputpath,zonesgj):
+    
+    w = shp.Writer(shp.POLYGON)
+    
+    w.field('ZONE','C','20')
+    w.field('TS1','C','20')
+    w.field('ATC1','N','20')
+    w.field('R1','N','20')
+    
+    for afeature in zonesgj['features']:
+        w.poly(parts=afeature['geometry']['coordinates'])
+        rec=afeature['properties']
+        w.record(rec['ZONE'],rec['TS1'],rec['ATC1'],rec['R1'])
+    
+    w.save(outputpath)
+    
+    #write prj file assuming NAD83
+    prj = open(outputpath+'.prj','w')
+    prj.write(prjNAD83())
+    prj.close()
+    
+    return 1
+
 if __name__ == '__main__':
     #grab sample json files
-    import json
     zf = open('C:/WORK/python/git/zdf/tests/zones.json','r')    
     zonesgj = json.loads(zf.read())
-    sf = open('C:/WORK/python/git/zdf/tests/stations.json','r')    
-    stationsgj = json.loads(sf.read())
+    #sf = open('C:/WORK/python/git/zdf/tests/stations.json','r')    
+    #stationsgj = json.loads(sf.read())
     
-    outputzdfpath = 'C:/WORK/python/git/zdf/tests/testoutput.zdf'
+    outputpath = 'C:/WORK/python/git/zdf/tests/testzone'
     #define the column or field names for each of the following items
-    zonecols={'zone':'ZONE','station':'TS1','time':'ATC1','range':'R1'}
-    stationcols={'station':'Station'}
-    writezdf(outputzdfpath,zonesgj,zonecols,stationsgj,stationcols)
+    writezoneshp(outputpath,zonesgj)
     
+
+# write shapefile from geojson points
+def writestationshp(outputpath,stationsgj):
+    
+    w = shp.Writer(shp.POINT)
+    
+    w.field('STATION','C','20')
+    
+    for afeature in stationsgj['features']:
+        c = afeature['geometry']['coordinates']
+        w.point(c[0],c[1])
+        w.record(afeature['properties']['Station'])
+    
+    w.save(outputpath)
+    
+    #write prj file assuming NAD83
+    prj = open(outputpath+'.prj','w')
+    prj.write(prjNAD83())
+    prj.close()
+    
+    return 1
+
+#if __name__ == '__main__':
+#    #grab sample json files
+#    zf = open('C:/WORK/python/git/zdf/tests/stations.json','r')    
+#    stationsgj = json.loads(zf.read())
+#    #sf = open('C:/WORK/python/git/zdf/tests/stations.json','r')    
+#    #stationsgj = json.loads(sf.read())
+#    
+#    outputpath = 'C:/WORK/python/git/zdf/tests/teststation'
+#    #define the column or field names for each of the following items
+#    writestationshp(outputpath,stationsgj)
+    
+
+
+###############################################################################
+# read shapefile to geojson
+
+# import shapefile
+#   # read the shapefile
+#   reader = shapefile.Reader("my.shp")
+#   fields = reader.fields[1:]
+#   field_names = [field[0] for field in fields]
+#   buffer = []
+#   for sr in reader.shapeRecords():
+#       atr = dict(zip(field_names, sr.record))
+#       geom = sr.shape.__geo_interface__
+#       buffer.append(dict(type="Feature", \
+#        geometry=geom, properties=atr)) 
+#   
+#   # write the GeoJSON file
+#   from json import dumps
+#   geojson = open("pyshp-demo.json", "w")
+#   geojson.write(dumps({"type": "FeatureCollection",\
+#    "features": buffer}, indent=2) + "\n")
+#   geojson.close()
