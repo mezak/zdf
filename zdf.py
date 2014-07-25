@@ -429,7 +429,7 @@ def writezoneshp(outputpath,zonesgj):
     w.field('ZONE','C','20')
     w.field('TS1','C','20')
     w.field('ATC1','N','20')
-    w.field('R1','N','20')
+    w.field('R1','D','20')
     
     for afeature in zonesgj['features']:
         w.poly(parts=afeature['geometry']['coordinates'])
@@ -445,16 +445,16 @@ def writezoneshp(outputpath,zonesgj):
     
     return 1
 
-if __name__ == '__main__':
-    #grab sample json files
-    zf = open('C:/WORK/python/git/zdf/tests/zones.json','r')    
-    zonesgj = json.loads(zf.read())
-    #sf = open('C:/WORK/python/git/zdf/tests/stations.json','r')    
-    #stationsgj = json.loads(sf.read())
-    
-    outputpath = 'C:/WORK/python/git/zdf/tests/testzone'
-    #define the column or field names for each of the following items
-    writezoneshp(outputpath,zonesgj)
+#if __name__ == '__main__':
+#    #grab sample json files
+#    zf = open('C:/WORK/python/git/zdf/tests/zones.json','r')    
+#    zonesgj = json.loads(zf.read())
+#    #sf = open('C:/WORK/python/git/zdf/tests/stations.json','r')    
+#    #stationsgj = json.loads(sf.read())
+#    
+#    outputpath = 'C:/WORK/python/git/zdf/tests/testzone'
+#    #define the column or field names for each of the following items
+#    writezoneshp(outputpath,zonesgj)
     
 
 # write shapefile from geojson points
@@ -493,22 +493,26 @@ def writestationshp(outputpath,stationsgj):
 
 ###############################################################################
 # read shapefile to geojson
+def shp2geojson(shppath):
+    # read the shapefile
+    reader = shp.Reader(shppath)
+    fields = reader.fields[1:]
+    field_names = [field[0] for field in fields]
+    buffer = []
+    for sr in reader.shapeRecords():
+        atr = dict(zip(field_names, sr.record))
+        #print atr
+        geom = sr.shape.__geo_interface__
+        #print geom
+        buffer.append(dict(type="Feature", geometry=geom, properties=atr))
+   
+    # write the GeoJSON file
+    geojson = {"type": "FeatureCollection","features": buffer}
 
-# import shapefile
-#   # read the shapefile
-#   reader = shapefile.Reader("my.shp")
-#   fields = reader.fields[1:]
-#   field_names = [field[0] for field in fields]
-#   buffer = []
-#   for sr in reader.shapeRecords():
-#       atr = dict(zip(field_names, sr.record))
-#       geom = sr.shape.__geo_interface__
-#       buffer.append(dict(type="Feature", \
-#        geometry=geom, properties=atr)) 
-#   
-#   # write the GeoJSON file
-#   from json import dumps
-#   geojson = open("pyshp-demo.json", "w")
-#   geojson.write(dumps({"type": "FeatureCollection",\
-#    "features": buffer}, indent=2) + "\n")
-#   geojson.close()
+    return geojson
+    
+if __name__ == '__main__':
+    #shapefile path
+    shppath = "C:/WORK/python/git/zdf/tests/JOA Zoning 20131008b.shp"
+    #zonecols={'zone':'ZONE','station':'TS1','time':'ATC1','range':'R1'}
+    shp2geojson(shppath)
